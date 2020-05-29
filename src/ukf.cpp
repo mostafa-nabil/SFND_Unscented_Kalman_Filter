@@ -14,6 +14,8 @@ UKF::UKF() {
   // if this is false, radar measurements will be ignored (except during init)
   use_radar_ = true;
 
+  is_initialized_ = false;
+
   // initial state vector
   x_ = VectorXd(5);
 
@@ -63,6 +65,39 @@ void UKF::ProcessMeasurement(MeasurementPackage meas_package) {
    * TODO: Complete this function! Make sure you switch between lidar and radar
    * measurements.
    */
+  // check if the first initialization is done
+  // if not initialized, initialize with the first measurement
+  if(false == is_initialized_)
+  {
+    if(MeasurementPackage::SensorType::LASER == meas_package.sensor_type_)
+    {
+      //initialize state
+      x_.block(0,0,2,0) = meas_package.raw_measurements_;
+      use_laser_ = false;
+    }
+    else if (MeasurementPackage::SensorType::RADAR == meas_package.sensor_type_)
+    {
+      x_(0) = meas_package.raw_measurements_(0)*cos(meas_package.raw_measurements_(1));
+      x_(1) = meas_package.raw_measurements_(0)*sin(meas_package.raw_measurements_(1));
+      x_(2) = meas_package.raw_measurements_(2);
+      
+      use_radar_ = false;
+
+    }
+    else
+    {
+      /* do nothing, unsupported type */
+    }
+    
+    //initialize covariance 
+
+    P_(0,0) = 1;
+    P_(1,1) = 1;
+    P_(2,2) = 1;
+    P_(3,3) = 1;
+    P_(4,4) = 1;
+    
+  }
 }
 
 void UKF::Prediction(double delta_t) {
