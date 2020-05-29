@@ -78,15 +78,20 @@ void UKF::ProcessMeasurement(MeasurementPackage meas_package) {
     if(MeasurementPackage::SensorType::LASER == meas_package.sensor_type_)
     {
       //initialize state
-      x_.block(0,0,2,0) = meas_package.raw_measurements_;
+      x_(0) = meas_package.raw_measurements_(0); //position
+      x_(1) = meas_package.raw_measurements_(1); //position
+      x_(2) = 17;//velocity
+      x_(3) = 0;//yaw
+      x_(4) = 0;//yaw_rate
       use_laser_ = false;
     }
     else if (MeasurementPackage::SensorType::RADAR == meas_package.sensor_type_)
     {
-      x_(0) = meas_package.raw_measurements_(0)*cos(meas_package.raw_measurements_(1));
-      x_(1) = meas_package.raw_measurements_(0)*sin(meas_package.raw_measurements_(1));
-      x_(2) = meas_package.raw_measurements_(2);
-      
+      x_(0) = meas_package.raw_measurements_(0)*cos(meas_package.raw_measurements_(1)); //position x
+      x_(1) = meas_package.raw_measurements_(0)*sin(meas_package.raw_measurements_(1)); //position y
+      x_(2) = meas_package.raw_measurements_(2)/cos(meas_package.raw_measurements_(1)); //velociy assuming yaw = 0
+      x_(3) = 0;//yaw
+      x_(4) = 0;//yaw_rate
       use_radar_ = false;
 
     }
@@ -289,4 +294,83 @@ void UKF::UpdateRadar(MeasurementPackage meas_package) {
    * covariance, P_.
    * You can also calculate the radar NIS, if desired.
    */
+
+  VectorXd z = meas_package.raw_measurements_;
+
+  //determine predicted measurement mean and covariance
+  int n_z = 3;
+  VectorXd z_pred;
+  VectorXd z_predSigma(3,2*n_aug_ + 1);
+  MatrixXd S(n_z,n_z);
+  MatrixXd R(n_z,n_z);
+  MatrixXd T(n_x_,n_z);
+
+  double w_0 = lambda_/(lambda_+n_aug_);
+  double w_i = 1/(2*(lambda_+n_aug_));
+
+  for(int i = 0; i < 2 * n_aug_ + 1; i++)
+  {
+      double px = Xsig_pred_(0,i);
+      double py = Xsig_pred_(1,i);
+      double v =  Xsig_pred_(2,i);
+      double phi = Xsig_pred_(3,i);
+      
+      double raw = sqrt(px*px + py*py);
+      double theta = atan(py/px);
+      double raw_dot = (px*cos(phi)*v + py*sin(phi)*v)/raw;
+      
+      z_predSigma(0,i) = raw;
+      z_predSigma(1,i) = theta;
+      z_predSigma(2,i) = raw_dot;
+  }
+  
+  // calculate mean predicted measurement
+  for(int i = 0; i < 2 * n_aug_ + 1; i++)
+  {
+    double w = (i == 0 ? w_0 : w_i);
+    z_pred = z_pred + w*z_predSigma.col(i);  
+  }
+  // calculate innovation covariance matrix S
+  R(0,0) = std_radr_*std_radr_;
+  R(1,1) = std_radphi_*std_radphi_;
+  R(2,2) = std_radrd_ * std_radrd_;
+  for(int i = 0; i < 2 * n_aug_ + 1; i++)
+  {
+    double w = (i == 0 ? w_0 : w_i);
+    VectorXd diff = z_predSigma.col(i) - z_pred;
+    S = S+w*diff*diff.transpose();
+  }
+  S = S + R;
+
+  T.fill(0.0);
+  for (int i = 0; i < 2 * n_aug_ + 1; ++i) {  // 2n+1 simga points
+    double w = (i == 0 ? w_0 : w_i);
+    // residual
+    VectorXd z_diff = z_predSigma.col(i) - z_pred;
+    // angle normalization
+    while (z_diff(1)> M_PI) z_diff(1)-=2.*M_PI;
+    while (z_diff(1)<-M_PI) z_diff(1)+=2.*M_PI;
+
+    // state difference
+    VectorXd x_diff = Xsig_pred_.col(i) - x_;
+    // angle normalization
+    while (x_diff(3)> M_PI) x_diff(3)-=2.*M_PI;
+    while (x_diff(3)<-M_PI) x_diff(3)+=2.*M_PI;
+
+    T = T + w * x_diff * z_diff.transpose();
+  }
+
+  // Kalman gain K;
+  MatrixXd K = T * S.inverse();
+
+  // residual
+  VectorXd z_diff = z - z_pred;
+
+  // angle normalization
+  while (z_diff(1)> M_PI) z_diff(1)-=2.*M_PI;
+  while (z_diff(1)<-M_PI) z_diff(1)+=2.*M_PI;
+
+  // update state mean and covariance matrix
+  x_ = x_ + K * z_diff;
+  P_ = P_ - K*S*K.transpose();
 }
