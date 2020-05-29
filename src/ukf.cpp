@@ -157,15 +157,17 @@ void UKF::Prediction(double delta_t) {
 
   x_aug.block(0,0,n_x_,0) = x_;
   P_aug.block(0,0,n_x_,n_x_) = P_;
+  P_aug.block(n_x_,n_x_,2,2) << std_a_*std_a_,0,
+                                0,std_yawdd_*std_yawdd_;
 
   //generate sigma points
   int n_sigma = (2*n_aug_) + 1;
-  MatrixXd X_sigma(n_x_,n_sigma);
+  Xsig_pred_ = MatrixXd(n_x_,n_sigma);
   MatrixXd X_sigma_aug(n_aug_,n_sigma);
   MatrixXd P_sqrt = P_aug.llt().matrixL();
 
   //insert mean as first sigma point
-  X_sigma.col(0) = x_aug;
+  X_sigma_aug.col(0) = x_aug;
 
   //generate the rest of sigma points
   for(int i = 1; i < n_aug_; i++)
@@ -192,19 +194,19 @@ void UKF::Prediction(double delta_t) {
       //avoid division by zero
       if(yaw_d == 0)
       {
-          X_sigma(0, i) = px + v * cos(yaw)*delta_t + 0.5*delta_t*delta_t*cos(yaw)*new_a;
-          X_sigma(1, i) = py + v * sin(yaw)*delta_t + 0.5*delta_t*delta_t*cos(yaw)*new_a;   
+          Xsig_pred_(0, i) = px + v * cos(yaw)*delta_t + 0.5*delta_t*delta_t*cos(yaw)*new_a;
+          Xsig_pred_(1, i) = py + v * sin(yaw)*delta_t + 0.5*delta_t*delta_t*cos(yaw)*new_a;   
       }
       else
       {
-          X_sigma(0, i) = px + (v/yaw_d)*(sin(yaw+yaw_d*delta_t)-sin(yaw)) + 0.5*delta_t*delta_t*cos(yaw)*new_a;
-          X_sigma(1, i) = py + (v/yaw_d)*(-cos(yaw+yaw_d*delta_t)+cos(yaw)) + 0.5*delta_t*delta_t*sin(yaw)*new_a;
+          Xsig_pred_(0, i) = px + (v/yaw_d)*(sin(yaw+yaw_d*delta_t)-sin(yaw)) + 0.5*delta_t*delta_t*cos(yaw)*new_a;
+          Xsig_pred_(1, i) = py + (v/yaw_d)*(-cos(yaw+yaw_d*delta_t)+cos(yaw)) + 0.5*delta_t*delta_t*sin(yaw)*new_a;
           
       }
       
-        X_sigma(2, i) = v + 0 + delta_t*new_a;
-        X_sigma(3, i) = yaw + yaw_d * delta_t + 0.5*delta_t*delta_t*new_phi;
-        X_sigma(4, i) = yaw_d + 0 + delta_t*new_phi;
+        Xsig_pred_(2, i) = v + 0 + delta_t*new_a;
+        Xsig_pred_(3, i) = yaw + yaw_d * delta_t + 0.5*delta_t*delta_t*new_phi;
+        Xsig_pred_(4, i) = yaw_d + 0 + delta_t*new_phi;
   }
 
   //calculate the predicted mean and covariance
@@ -212,13 +214,13 @@ void UKF::Prediction(double delta_t) {
   for(int i = 0; i < n_sigma; i++ )
   {
     double w = (i == 0 ? w_0 : w_i);
-    x_ = x_ + (w*X_sigma.col(i));   
+    x_ = x_ + (w*Xsig_pred_.col(i));   
   }
   
   for(int i = 0; i < n_sigma; i++ )
   {
     double w = (i == 0 ? w_0 : w_i);
-    VectorXd x_diff = X_sigma.col(i) - x_; 
+    VectorXd x_diff = Xsig_pred_.col(i) - x_; 
     P_ = P_ +  w*x_diff*x_diff.transpose();     
   }
 
@@ -232,6 +234,52 @@ void UKF::UpdateLidar(MeasurementPackage meas_package) {
    * covariance, P_.
    * You can also calculate the lidar NIS, if desired.
    */
+
+  VectorXd z = meas_package.raw_measurements_;
+
+  //determine predicted measurement mean and covariance
+  int n_z = 2;
+  VectorXd z_pred = x_.block(0,0,n_z,0);
+  VectorXd z_predSigma;
+  MatrixXd S(n_z,n_z);
+  MatrixXd R(n_z,n_z);
+  MatrixXd T(n_x_,n_z);
+
+  double w_0 = lambda_/(lambda_+n_aug_);
+  double w_i = 1/(2*(lambda_+n_aug_));
+
+
+  R << std_laspx_*std_laspx_,0,
+       0,std_laspy_*std_laspy_;   
+  z_predSigma = Xsig_pred_.block(0,0,2,(2*n_aug_)+1);
+
+  for (int i = 0; i < (2*n_aug_) + 1; i++)
+  {
+    double w = (i == 0 ? w_0 : w_i);
+    VectorXd z_diff = z_predSigma.col(i) - z_pred; 
+    S = S + w*z_diff*z_diff.transpose();
+  }
+
+  S = S + R;
+
+  //calculate the cross-correlation matrix
+  for(int i = 0; i < 2*n_aug_ + 1; i++)
+  {
+    VectorXd x_diff = Xsig_pred_.col(i) - x_;
+    VectorXd z_diff = z_predSigma.col(i) - z_pred;
+    double w = (i == 0 ? w_0 : w_i);
+
+   T = T + w*x_diff*z_diff.transpose();
+  }
+  //calculate the kalman gain
+  MatrixXd K = T*S.inverse();
+
+  //update mean
+  x_ = x_ + K*(z - z_pred);
+
+  //update covariance
+  P_ = P_ - K*S*K.transpose();
+
 }
 
 void UKF::UpdateRadar(MeasurementPackage meas_package) {
