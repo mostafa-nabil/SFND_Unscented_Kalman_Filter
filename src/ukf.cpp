@@ -96,6 +96,40 @@ void UKF::ProcessMeasurement(MeasurementPackage meas_package) {
     P_(2,2) = 1;
     P_(3,3) = 1;
     P_(4,4) = 1;
+
+    //set time of last measurement
+    time_us_ = meas_package.timestamp_;
+    
+  }
+  //if this is not the first measurement
+  else
+  {
+    //check if the current measurement is the one to use
+    if((MeasurementPackage::SensorType::LASER == meas_package.sensor_type_ && true == use_laser_)
+    || (MeasurementPackage::SensorType::RADAR == meas_package.sensor_type_ && true == use_radar_))
+    {
+      // set time difference for prediction
+      double dt = meas_package.timestamp_ - time_us_;
+
+      //run prediction step
+      Prediction(dt);
+
+      //check which measurement to process'
+      if(true == use_laser_)
+      {
+        UpdateLidar(meas_package);
+      }
+      else if(true == use_radar_)
+      {
+        UpdateRadar(meas_package);
+      }
+      else
+      {
+        /* this should not happen */
+      }
+      
+    }
+    
     
   }
 }
