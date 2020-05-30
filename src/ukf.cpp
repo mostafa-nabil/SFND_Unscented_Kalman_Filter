@@ -29,10 +29,10 @@ UKF::UKF() {
   P_ = MatrixXd(5, 5);
 
   // Process noise standard deviation longitudinal acceleration in m/s^2
-  std_a_ = 30;
+  std_a_ = 10;
 
   // Process noise standard deviation yaw acceleration in rad/s^2
-  std_yawdd_ = 30;
+  std_yawdd_ = 5;
   
   /**
    * DO NOT MODIFY measurement noise values below.
@@ -80,7 +80,7 @@ void UKF::ProcessMeasurement(MeasurementPackage meas_package) {
       //initialize state
       x_(0) = meas_package.raw_measurements_(0); //position
       x_(1) = meas_package.raw_measurements_(1); //position
-      x_(2) = 17;//velocity
+      x_(2) = 25;//velocity
       x_(3) = 0;//yaw
       x_(4) = 0;//yaw_rate
       use_laser_ = false;
@@ -104,9 +104,9 @@ void UKF::ProcessMeasurement(MeasurementPackage meas_package) {
 
     P_(0,0) = 1;
     P_(1,1) = 1;
-    P_(2,2) = 1;
-    P_(3,3) = 1;
-    P_(4,4) = 1;
+    P_(2,2) = 200;
+    P_(3,3) = 10;
+    P_(4,4) = 0.05;
 
     //set time of last measurement
     time_us_ = meas_package.timestamp_;
@@ -160,6 +160,13 @@ void UKF::Prediction(double delta_t) {
   //create augmented state and covariance
   VectorXd x_aug(n_aug_);
   MatrixXd P_aug(n_aug_,n_aug_);
+
+  x_aug.fill(0.0);
+  x_aug(0) = x_(0);
+  x_aug(1) = x_(1);
+  x_aug(2) = x_(2);
+  x_aug(3) = x_(3);
+  x_aug(4) = x_(4);
 
   P_aug.fill(0.0);
   P_aug.block(0,0,n_x_,n_x_) = P_;
