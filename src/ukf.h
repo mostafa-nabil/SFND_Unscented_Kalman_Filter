@@ -95,6 +95,13 @@ class UKF {
 
   // Sigma point spreading parameter
   double lambda_;
+
+  // UKF weight for first sigma points and the rest of sigma points
+  // respectively
+  double w_0_;
+  double w_i_;
+  //micro-seconds to seconds conversion constant
+  double us2s_;
 };
 
 #endif  // UKF_H
